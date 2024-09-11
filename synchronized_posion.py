@@ -2,10 +2,9 @@
 import sys
 import logging
 import carla
-import time
 import pyproj
 import rclpy
-import threading
+import time  # 用于控制频率
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import NavSatFix
 import carla_common.transforms as trans
@@ -17,7 +16,7 @@ class PositionRelay(CompatibleNode):
     只同步车辆的位置到Carla仿真器
     """
 
-    def __init__(self, role_name=None):
+    def __init__(self, role_name=None, update_frequency=1.0):
         """
         构造函数
         """
@@ -27,7 +26,7 @@ class PositionRelay(CompatibleNode):
         self.origin_lat = 40.1510363262265
         self.origin_lon = 116.260639075136
         self.origin_alt = 33.146
-
+        
         # 设置 WGS84 到 UTM 坐标转换的 pyproj 对象
         self.transformer = pyproj.Transformer.from_crs(
             "epsg:4326",  # WGS84 坐标系
@@ -41,7 +40,6 @@ class PositionRelay(CompatibleNode):
         self.map = None
         self.veh_pose = Pose()
         self.role_name = role_name  # 动态设置 role_name 的支持
-        self.last_sync_time = 0  # 最后同步时间
 
         # 订阅车辆GNSS位置信息
         self.gnss_subscriber = self.new_subscription(
@@ -51,31 +49,29 @@ class PositionRelay(CompatibleNode):
             qos_profile=10
         )
 
-    def smooth_position(self, current_pos, target_pos, smoothing_factor=0.1):
-        """
-        使用线性插值平滑位置变化
-        """
-        return current_pos * (1 - smoothing_factor) + target_pos * smoothing_factor
+        # 设置频率控制相关变量
+        self.update_frequency = 5 # 更新频率，单位 Hz
+        self.last_update_time = time.time()  # 上次更新的时间
 
     def gnss_updated(self, gnss_data):
         """
         回调函数，更新从GNSS话题接收到的车辆位置信息，并转换为Carla坐标
         """
-        # 当前时间
+        # 检查时间间隔，控制更新频率
         current_time = time.time()
+        time_diff = current_time - self.last_update_time
 
-        # 如果距离上次同步时间小于 0.2 秒（200 毫秒），则不执行同步
-        if current_time - self.last_sync_time < 0.2:
-            return
+        if time_diff < 1.0 / self.update_frequency:
+            return  # 如果时间间隔小于设定的更新频率，直接返回
 
-        # 更新最后同步时间
-        self.last_sync_time = current_time
+        # 更新上次执行时间
+        self.last_update_time = current_time
 
         # GNSS 数据
         gnss_lat = gnss_data.latitude
         gnss_lon = gnss_data.longitude
         gnss_alt = gnss_data.altitude
-
+        
         # 将 GNSS 坐标转换为 UTM 坐标
         gnss_x, gnss_y = self.transformer.transform(gnss_lon, gnss_lat)
         origin_x, origin_y = self.transformer.transform(self.origin_lon, self.origin_lat)
@@ -84,12 +80,15 @@ class PositionRelay(CompatibleNode):
         relative_x = gnss_x - origin_x
         relative_y = gnss_y - origin_y
         relative_z = gnss_alt - self.origin_alt
-
+        
         # 更新车辆的位置
         self.veh_pose.position.x = relative_x
         self.veh_pose.position.y = relative_y
         self.veh_pose.position.z = relative_z
-        
+
+        # 打印相对位置
+        print(f"Relative Position - X: {relative_x}, Y: {relative_y}, Z: {relative_z}")
+
         # 每次 GNSS 更新时调用 vehicle_relay_cycle，确保位置同步
         self.vehicle_relay_cycle()
 
@@ -104,10 +103,13 @@ class PositionRelay(CompatibleNode):
         print(f"Syncing vehicle position at: {self.vehicle.get_location()}")
         logging.info(f"Syncing vehicle position at: {self.vehicle.get_location()}")
 
-        # 平滑车辆位置更新
-        self.veh_pose.position.x = self.smooth_position(self.vehicle.get_location().x, self.veh_pose.position.x)
-        self.veh_pose.position.y = self.smooth_position(self.vehicle.get_location().y, self.veh_pose.position.y)
-        self.veh_pose.position.z = self.smooth_position(self.vehicle.get_location().z, self.veh_pose.position.z)
+        # 根据当前道路调整车辆的高度
+        veh_wayp = self.map.get_waypoint(
+            self.vehicle.get_location(),
+            project_to_road=True,
+            lane_type=(carla.LaneType.Driving)
+        )
+        self.veh_pose.position.z = veh_wayp.transform.location.z  # 保持车辆在道路上
 
         # 将位置信息传递给Carla仿真器
         ego_pose = trans.ros_pose_to_carla_transform(self.veh_pose)
@@ -151,7 +153,6 @@ class PositionRelay(CompatibleNode):
 
         logging.info(f"找到车辆，角色名: {self.ego_actor.attributes['role_name']}")
 
-
         # 开始循环
         print("Entering spin function...")
         self.spin()
@@ -169,7 +170,7 @@ def main(args=None):
         role_name = sys.argv[1]  # 从命令行传递车辆的角色名
 
     try:
-        controller = PositionRelay(role_name=role_name)
+        controller = PositionRelay(role_name=role_name, update_frequency=10)  # 设置更新频率，10Hz
         controller.run()
     except KeyboardInterrupt:
         pass
