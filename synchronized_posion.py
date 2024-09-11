@@ -89,6 +89,9 @@ class PositionRelay(CompatibleNode):
         self.veh_pose.position.x = relative_x
         self.veh_pose.position.y = relative_y
         self.veh_pose.position.z = relative_z
+        
+        # 每次 GNSS 更新时调用 vehicle_relay_cycle，确保位置同步
+        self.vehicle_relay_cycle()
 
     def vehicle_relay_cycle(self):
         """
@@ -148,20 +151,6 @@ class PositionRelay(CompatibleNode):
 
         logging.info(f"找到车辆，角色名: {self.ego_actor.attributes['role_name']}")
 
-        # 控制循环：每个周期将位置信息传递给Carla
-        def loop():
-            # 添加调试输出，确认每次进入循环时是否有输出
-            print("Entering loop cycle...")
-            logging.info("Entering loop cycle...")
-            self.vehicle_relay_cycle()
-
-        # 设置定时器，使用 threading.Timer 实现每 0.2 秒调用一次 loop
-        def start_timer(interval, function):
-            threading.Timer(interval, function).start()
-
-        # 启动定时器，5Hz 运行（降低频率以减少抖动）
-        start_timer(0.2, loop)
-        logging.info("Custom timer set, now entering spin...")
 
         # 开始循环
         print("Entering spin function...")
