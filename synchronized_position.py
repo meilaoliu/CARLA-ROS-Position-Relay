@@ -12,7 +12,7 @@ import carla_common.transforms as trans
 import ros_compatibility as roscomp
 from ros_compatibility.node import CompatibleNode
 from tf_transformations import euler_from_quaternion, quaternion_from_euler
-
+from autoware_auto_vehicle_msgs.msg import VelocityReport
 
 class PositionRelay(CompatibleNode):
     """
@@ -43,6 +43,8 @@ class PositionRelay(CompatibleNode):
         self.map = None
         self.veh_pose = Pose()
         self.role_name = role_name  # 动态设置 role_name 的支持
+        self.veh_velocity = 0.0
+        self.ang_velocity = 0.0
 
         # 订阅车辆GNSS位置信息
         self.gnss_subscriber = self.new_subscription(
@@ -60,9 +62,17 @@ class PositionRelay(CompatibleNode):
             qos_profile=10
         )
 
+        # 订阅车辆速度信息
+        self.velocity_subscriber = self.new_subscription(
+            VelocityReport,
+            "/vehicle/status/velocity_status",
+            self.velocity_updated,
+            qos_profile=10
+        )
+
         # 初始化姿态变量
         self.orientation = None
-        self.update_frequency = 1  # 更新频率，单位 Hz
+        self.update_frequency = 100  # 更新频率，单位 Hz
         self.last_update_time = time.time()  # 上次更新的时间
         self.yaw_offset = None  # 初始化偏差为None
 
@@ -139,6 +149,19 @@ class PositionRelay(CompatibleNode):
         self.veh_pose.orientation.w = refined_quat[3]
 
         self.get_logger().info(f"IMU Orientation updated - yaw: {yaw}")
+    def velocity_updated(self, velocity_data):
+        """
+        回调函数，更新从Velocity话题接收到的车辆速度信息
+        """
+        current_time = time.time()
+        time_diff = current_time - self.last_update_time
+
+        if time_diff < 1.0 / self.update_frequency:
+            return  # 如果时间间隔小于设定的更新频率，直接返回
+        
+        self.veh_velocity = velocity_data.longitudinal_velocity
+        self.ang_velocity = velocity_data.heading_rate
+        self.get_logger().info(f"Updated Velocity - Longitudinal: {self.veh_velocity}, Heading rate: {self.ang_velocity}")
 
     def vehicle_relay_cycle(self):
         """
@@ -158,6 +181,15 @@ class PositionRelay(CompatibleNode):
         # 将位置信息传递给Carla仿真器
         ego_pose = trans.ros_pose_to_carla_transform(self.veh_pose)
         self.vehicle.set_transform(ego_pose)
+
+        # 将速度同步到Carla仿真器
+        velocity = carla.Vector3D(self.veh_velocity, 0.0, 0.0)
+        self.vehicle.set_target_velocity(velocity)
+        self.get_logger().info(f"Syncing vehicle velocity: {self.veh_velocity}")
+
+        # 设置车辆角速度（航向角变化率）
+        angular_velocity = carla.Vector3D(0.0, 0.0, self.ang_velocity)
+        self.vehicle.set_target_angular_velocity(angular_velocity)
 
     def run(self):
         """
