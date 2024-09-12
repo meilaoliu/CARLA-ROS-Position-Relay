@@ -4,6 +4,7 @@ import logging
 import carla
 import pyproj
 import rclpy
+import time  # 用于控制频率
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import NavSatFix
 import carla_common.transforms as trans
@@ -15,7 +16,7 @@ class PositionRelay(CompatibleNode):
     只同步车辆的位置到Carla仿真器
     """
 
-    def __init__(self, role_name=None):
+    def __init__(self, role_name=None, update_frequency=1.0):
         """
         构造函数
         """
@@ -39,7 +40,7 @@ class PositionRelay(CompatibleNode):
         self.map = None
         self.veh_pose = Pose()
         self.role_name = role_name  # 动态设置 role_name 的支持
-
+        
         # 订阅车辆GNSS位置信息
         self.gnss_subscriber = self.new_subscription(
             NavSatFix,
@@ -48,10 +49,24 @@ class PositionRelay(CompatibleNode):
             qos_profile=10
         )
 
+        # 设置频率控制相关变量
+        self.update_frequency = 50 # 更新频率，单位 Hz
+        self.last_update_time = time.time()  # 上次更新的时间
+
     def gnss_updated(self, gnss_data):
         """
         回调函数，更新从GNSS话题接收到的车辆位置信息，并转换为Carla坐标
         """
+        # 检查时间间隔，控制更新频率
+        current_time = time.time()
+        time_diff = current_time - self.last_update_time
+
+        if time_diff < 1.0 / self.update_frequency:
+            return  # 如果时间间隔小于设定的更新频率，直接返回
+
+        # 更新上次执行时间
+        self.last_update_time = current_time
+
         # GNSS 数据
         gnss_lat = gnss_data.latitude
         gnss_lon = gnss_data.longitude
@@ -155,7 +170,7 @@ def main(args=None):
         role_name = sys.argv[1]  # 从命令行传递车辆的角色名
 
     try:
-        controller = PositionRelay(role_name=role_name)
+        controller = PositionRelay(role_name=role_name, update_frequency=10)  # 设置更新频率，10Hz
         controller.run()
     except KeyboardInterrupt:
         pass
