@@ -176,6 +176,15 @@ class PositionRelay(CompatibleNode):
         if time_diff < 1.0 / self.update_frequency:
             return  # 如果时间间隔小于设定的更新频率，直接返回
         
+         # 滤波平滑处理
+        if self.last_velocity is not None:
+            self.veh_velocity = self.alpha * self.veh_velocity + (1 - self.alpha) * self.last_velocity
+        if self.last_ang_velocity is not None:
+            self.ang_velocity = self.alpha * self.ang_velocity + (1 - self.alpha) * self.last_ang_velocity
+        
+        self.last_velocity = self.veh_velocity
+        self.last_ang_velocity = self.ang_velocity
+
         self.veh_velocity = velocity_data.longitudinal_velocity
         self.ang_velocity = velocity_data.heading_rate
         self.get_logger().info(f"Updated Velocity - Longitudinal: {self.veh_velocity}, Heading rate: {self.ang_velocity}")
