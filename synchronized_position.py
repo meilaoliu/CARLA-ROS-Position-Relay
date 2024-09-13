@@ -46,6 +46,12 @@ class PositionRelay(CompatibleNode):
         self.veh_velocity = 0.0
         self.ang_velocity = 0.0
 
+        # 保存最近的IMU和速度数据进行平滑
+        self.last_yaw = None
+        self.last_velocity = None
+        self.last_ang_velocity = None
+        self.alpha = 0.05  # 滤波系数，0.0-1.0之间，值越小，滤波越强
+
         # 订阅车辆GNSS位置信息
         self.gnss_subscriber = self.new_subscription(
             NavSatFix,
@@ -129,16 +135,25 @@ class PositionRelay(CompatibleNode):
         quat = [imu_data.orientation.x, imu_data.orientation.y, imu_data.orientation.z, imu_data.orientation.w]
         roll, pitch, yaw = euler_from_quaternion(quat)
 
-        # 如果还没有计算偏差，先计算IMU与CARLA的偏差
+        # 如果还没有计算偏差，先计算IMU与CARLA参考系之间的偏差
         if self.yaw_offset is None:
             carla_yaw = self.vehicle.get_transform().rotation.yaw * (math.pi / 180.0)  # 将CARLA的yaw角转换为弧度
             self.yaw_offset = carla_yaw - yaw  # 计算偏差
             self.get_logger().info(f"Yaw offset calculated: {self.yaw_offset}")
 
-        # 应用偏差修正，但只在需要时使用
+        # 应用偏差修正
         yaw += self.yaw_offset
-        yaw = -yaw
-        yaw = yaw +19.96*(math.pi/180)
+        yaw = -yaw #取反
+        yaw = yaw +21.02*(math.pi/180) #添加偏航偏差
+
+        # 控制精度，将 yaw 角保留到小数点后 3 位
+        yaw = round(yaw, 2)
+
+        # 平滑处理（低通滤波）
+        if self.last_yaw is not None:
+            yaw = self.alpha * yaw + (1 - self.alpha) * self.last_yaw
+        self.last_yaw = yaw
+
         # 仅保留航向角（yaw），将 roll 和 pitch 设置为 0
         refined_quat = quaternion_from_euler(0, 0, yaw)
 
@@ -148,7 +163,9 @@ class PositionRelay(CompatibleNode):
         self.veh_pose.orientation.z = refined_quat[2]
         self.veh_pose.orientation.w = refined_quat[3]
 
-        self.get_logger().info(f"IMU Orientation updated - yaw: {yaw}")
+        #self.get_logger().info(f"IMU Orientation updated - yaw: {yaw}")
+        self.get_logger().info(f"Yaw (rounded): {yaw}")
+        
     def velocity_updated(self, velocity_data):
         """
         回调函数，更新从Velocity话题接收到的车辆速度信息
