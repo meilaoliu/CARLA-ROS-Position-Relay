@@ -121,7 +121,7 @@ class PositionRelay(CompatibleNode):
 
         yaw += self.yaw_offset
         yaw = -yaw 
-        yaw = yaw + 20.9 * (math.pi / 180)  
+        yaw = yaw + 21.02 * (math.pi / 180)  
 
         yaw = round(yaw, 2)
 
@@ -139,7 +139,6 @@ class PositionRelay(CompatibleNode):
         self.get_logger().info(f"Yaw (rounded): {yaw}")
         
         # 将处理后的IMU数据加入队列
-        
         self.sensor_queue.put(("imu_data", yaw))  
 
     def velocity_updated(self, velocity_data):
