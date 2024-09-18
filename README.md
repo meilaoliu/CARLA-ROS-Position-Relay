@@ -8,6 +8,6 @@ This project is a PositionRelay system designed to synchronize vehicle positions
 - **速度控制：** 更新车辆的纵向、横向速度以及角速度，确保仿真中车辆的动态表现。
 -**同步模式支持：** 支持同步模式，在 CARLA 中保持一致的仿真时间步长。
 # 系统要求
--CARLA 仿真器
--ROS 2
--Python 库：pyproj、rclpy、geometry_msgs、sensor_msgs、tf_transformations
+- CARLA 仿真器
+- ROS 2
+- Python 库：pyproj、rclpy、geometry_msgs、sensor_msgs、tf_transformations
