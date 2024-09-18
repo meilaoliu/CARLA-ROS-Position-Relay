@@ -1,5 +1,6 @@
 # CARLA-ROS-Position-Relay
 This project is a PositionRelay system designed to synchronize vehicle positions and IMU data between CARLA and ROS environments. The system processes data from GNSS, IMU, and velocity topics, integrating real-time feedback into the CARLA vehicle simulation. The primary focus is maintaining accurate vehicle positioning and orientation in the simulation, with a role for real-time synchronization.
+
 该项目实现了一个 PositionRelay 系统，用于在 CARLA 仿真器和 ROS 环境之间同步车辆的位置信息和 IMU 数据。该系统通过处理 GNSS、IMU 和速度话题的数据，实时反馈车辆的状态，并将其同步到 CARLA 仿真环境中，确保车辆的位置和方向的准确性。
 
 # 功能特点
