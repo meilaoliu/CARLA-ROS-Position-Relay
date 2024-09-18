@@ -43,16 +43,10 @@ class PositionRelay(CompatibleNode):
         self.role_name = role_name  
         self.veh_velocity = 0.0
         self.ang_velocity = 0.0
-
         self.lateral_velocity = 0.0
 
-        self.last_yaw = None
-        self.last_velocity = None
-        self.last_ang_velocity = None
-        self.alpha = 1  # 滤波系数，0.0-1.0之间，值越小，滤波越强 如果需要滤波则需要将run函数中的set_initial_position_and_yaw注释去掉
         self.yaw_offset = None  # 初始化偏差为None
 
-        self.sensor_queue = Queue()  # 创建消息队列
 
         # 设置订阅者并添加日志
         self.gnss_subscriber = self.new_subscription(
@@ -105,8 +99,6 @@ class PositionRelay(CompatibleNode):
 
         self.get_logger().info(f"Relative Position - X: {relative_x}, Y: {relative_y}, Z: {relative_z}")
         
-        # 将处理后的GNSS数据加入队列
-        #self.sensor_queue.put(("gnss_data", relative_x, relative_y, relative_z))  
 
     def imu_updated(self, imu_data):
         """
@@ -126,10 +118,6 @@ class PositionRelay(CompatibleNode):
 
         yaw = round(yaw, 4)
 
-        if self.last_yaw is not None:
-            yaw = self.alpha * yaw + (1 - self.alpha) * self.last_yaw
-        self.last_yaw = yaw
-
         refined_quat = quaternion_from_euler(0, 0, yaw)
 
         self.veh_pose.orientation.x = refined_quat[0]
@@ -139,29 +127,17 @@ class PositionRelay(CompatibleNode):
 
         self.get_logger().info(f"Yaw (rounded): {yaw}")
         
-        # 将处理后的IMU数据加入队列
-        #self.sensor_queue.put(("imu_data", yaw))  
-
     def velocity_updated(self, velocity_data):
         """
         更新速度数据，并将处理后的速度加入队列
         """
-        if self.last_velocity is not None:
-            self.veh_velocity = self.alpha * self.veh_velocity + (1 - self.alpha) * self.last_velocity
-        if self.last_ang_velocity is not None:
-            self.ang_velocity = self.alpha * self.ang_velocity + (1 - self.alpha) * self.last_ang_velocity
-        
-        self.last_velocity = self.veh_velocity
-        self.last_ang_velocity = self.ang_velocity
-
         self.veh_velocity = velocity_data.longitudinal_velocity
         self.ang_velocity = velocity_data.heading_rate
         self.lateral_velocity = velocity_data.lateral_velocity
 
         #self.get_logger().info(f"Updated Velocity - Longitudinal: {self.veh_velocity}, Heading rate: {self.ang_velocity}")
         
-        # 将处理后的速度数据加入队列
-        #self.sensor_queue.put(("velocity_data", self.veh_velocity, self.ang_velocity))  
+
 
     def vehicle_relay_cycle(self):
         """
@@ -169,18 +145,6 @@ class PositionRelay(CompatibleNode):
         """
         if self.vehicle is None:
             return
-        
-        # 从队列中取出数据并处理
-        # try:
-        #     data_type, *data_values = self.sensor_queue.get(True, 3.0)
-        #     if data_type == "gnss_data":
-        #         self.get_logger().info(f"GNSS Data Processed: X={data_values[0]}, Y={data_values[1]}, Z={data_values[2]}")
-        #     elif data_type == "imu_data":
-        #         self.get_logger().info(f"IMU Data Processed: Yaw={data_values[0]}")
-        #     elif data_type == "velocity_data":
-        #         self.get_logger().info(f"Velocity Data Processed: Velocity={data_values[0]}, Angular Velocity={data_values[1]}")
-        # except Empty:
-        #     self.get_logger().warning("Data processing timeout")
 
         veh_wayp = self.map.get_waypoint(
             self.vehicle.get_location(),
