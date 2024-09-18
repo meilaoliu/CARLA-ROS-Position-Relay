@@ -43,10 +43,13 @@ class PositionRelay(CompatibleNode):
         self.role_name = role_name  
         self.veh_velocity = 0.0
         self.ang_velocity = 0.0
+
+        self.lateral_velocity = 0.0
+
         self.last_yaw = None
         self.last_velocity = None
         self.last_ang_velocity = None
-        self.alpha = 1  # 滤波系数，0.0-1.0之间，值越小，滤波越强
+        self.alpha = 1  # 滤波系数，0.0-1.0之间，值越小，滤波越强 如果需要滤波则需要将run函数中的set_initial_position_and_yaw注释去掉
         self.yaw_offset = None  # 初始化偏差为None
 
         self.sensor_queue = Queue()  # 创建消息队列
@@ -153,7 +156,9 @@ class PositionRelay(CompatibleNode):
 
         self.veh_velocity = velocity_data.longitudinal_velocity
         self.ang_velocity = velocity_data.heading_rate
-        self.get_logger().info(f"Updated Velocity - Longitudinal: {self.veh_velocity}, Heading rate: {self.ang_velocity}")
+        self.lateral_velocity = velocity_data.lateral_velocity
+
+        #self.get_logger().info(f"Updated Velocity - Longitudinal: {self.veh_velocity}, Heading rate: {self.ang_velocity}")
         
         # 将处理后的速度数据加入队列
         #self.sensor_queue.put(("velocity_data", self.veh_velocity, self.ang_velocity))  
@@ -187,12 +192,13 @@ class PositionRelay(CompatibleNode):
         ego_pose = trans.ros_pose_to_carla_transform(self.veh_pose)
         self.vehicle.set_transform(ego_pose)
 
-        velocity = carla.Vector3D(self.veh_velocity, 0.0, 0.0)
+        velocity = carla.Vector3D(self.veh_velocity, self.lateral_velocity, 0.0)
         self.vehicle.set_target_velocity(velocity)
-        self.get_logger().info(f"Syncing vehicle velocity: {self.veh_velocity}")
 
         angular_velocity = carla.Vector3D(0.0, 0.0, self.ang_velocity)
         self.vehicle.set_target_angular_velocity(angular_velocity)
+
+        self.get_logger().info(f"Syncing longitudinal velocity: {self.veh_velocity}, lateral velocity: {self.lateral_velocity}, angular velocity: {self.ang_velocity}")
 
     def set_initial_position_and_yaw(self):
         """
