@@ -30,7 +30,7 @@ class PositionRelay(CompatibleNode):
         self.origin_alt = 33.146
 
         self.transformer = pyproj.Transformer.from_crs(
-            "epsg:4326",  
+            "epsg:4326",   
             "epsg:32650",  
             always_xy=True
         )
@@ -45,8 +45,8 @@ class PositionRelay(CompatibleNode):
         self.ang_velocity = 0.0
         self.lateral_velocity = 0.0
 
-        self.yaw_offset = None  # 初始化偏差为None
-
+        self.yaw_offset = 0  # 初始化偏差为None
+        self.number = 0 
 
         # 设置订阅者并添加日志
         self.gnss_subscriber = self.new_subscription(
@@ -104,28 +104,45 @@ class PositionRelay(CompatibleNode):
         """
         更新IMU数据，并将处理后的IMU姿态加入队列
         """
+        self.vehicle_relay_cycle()  # 后同步更新车辆状态
+
         quat = [imu_data.orientation.x, imu_data.orientation.y, imu_data.orientation.z, imu_data.orientation.w]
         roll, pitch, yaw = euler_from_quaternion(quat)
+        
+        # if self.yaw_offset==0 and self.number>10:
+        #     carla_yaw_original = self.vehicle.get_transform().rotation.yaw 
+        #     carla_yaw=carla_yaw_original* (math.pi / 180.0)  
+        #     self.yaw_offset = carla_yaw - yaw  
+        #     self.get_logger().info(f"yaw: {yaw}") 
+        #     self.get_logger().info(f"carla_yaw_original: {carla_yaw_original}")    
+        #     self.get_logger().info(f"carla_yaw: {carla_yaw}") 
+        #     self.get_logger().info(f"Yaw offset calculated: {self.yaw_offset}")
+        #     time.sleep(10)
 
-        if self.yaw_offset is None:
-            carla_yaw = self.vehicle.get_transform().rotation.yaw * (math.pi / 180.0)  
-            self.yaw_offset = carla_yaw - yaw  
-            self.get_logger().info(f"Yaw offset calculated: {self.yaw_offset}")
+        # yaw += self.yaw_offset
+        
+        
+        
+        self.get_logger().info(f"VEHICLE yaw: {yaw*180/math.pi}") 
 
-        yaw += self.yaw_offset
-        yaw = -yaw 
-        yaw = yaw + 20.02 * (math.pi / 180)  
+
+        yaw = -yaw + 90 * (math.pi / 180) 
+
+        #保证yaw在【-pi,pi】的范围内
+        yaw =(yaw+math.pi)%(2*math.pi)-math.pi
 
         yaw = round(yaw, 4)
 
         refined_quat = quaternion_from_euler(0, 0, yaw)
-
+  
+        raid =180*(yaw/math.pi)
         self.veh_pose.orientation.x = refined_quat[0]
         self.veh_pose.orientation.y = refined_quat[1]
         self.veh_pose.orientation.z = refined_quat[2]
         self.veh_pose.orientation.w = refined_quat[3]
 
-        self.get_logger().info(f"Yaw (rounded): {yaw}")
+        self.get_logger().info(f"Yaw (rounded): {yaw},raid: {raid}")
+        self.number=self.number+1
         
     def velocity_updated(self, velocity_data):
         """
@@ -156,13 +173,17 @@ class PositionRelay(CompatibleNode):
         ego_pose = trans.ros_pose_to_carla_transform(self.veh_pose)
         self.vehicle.set_transform(ego_pose)
 
+        transform = self.vehicle.get_transform()
+        self.get_logger().info(f"vehicle yaw:{transform.rotation.yaw}")
+
+
         velocity = carla.Vector3D(self.veh_velocity, self.lateral_velocity, 0.0)
         self.vehicle.set_target_velocity(velocity)
 
         angular_velocity = carla.Vector3D(0.0, 0.0, self.ang_velocity)
         self.vehicle.set_target_angular_velocity(angular_velocity)
 
-        self.get_logger().info(f"Syncing longitudinal velocity: {self.veh_velocity}, lateral velocity: {self.lateral_velocity}, angular velocity: {self.ang_velocity}")
+        #self.get_logger().info(f"Syncing longitudinal velocity: {self.veh_velocity}, lateral velocity: {self.lateral_velocity}, angular velocity: {self.ang_velocity}")
 
     def set_initial_position_and_yaw(self):
         """
@@ -216,13 +237,13 @@ class PositionRelay(CompatibleNode):
             # 执行初始位置与 yaw 角更新
             #self.set_initial_position_and_yaw()
 
-            # 启动旋转线程
+            # 启动ros 订阅回调消息 线程
             spin_thread = threading.Thread(target=spin_node, args=(self,), daemon=True)
             spin_thread.start()
 
             while True:
                 world.tick()  # 触发同步更新
-                self.vehicle_relay_cycle()  # 每次tick后同步更新车辆状态
+                #self.vehicle_relay_cycle()  # 每次tick后同步更新车辆状态
                 time.sleep(0.02)
 
         finally:
